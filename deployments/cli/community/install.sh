@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# FORK WARNING (plane-evo): this installer defaults to makeplane/plane images and
+# clones makeplane/plane when it builds locally. That silently skips this fork.
+# For plane-evo on a shared host, use deployments/fork-shared-host/ instead.
 BRANCH=${BRANCH:-master}
 SCRIPT_DIR=$PWD
 SERVICE_FOLDER=plane-app

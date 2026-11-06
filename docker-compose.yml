@@ -1,3 +1,7 @@
+# Local source-build compose (fork code). Not the shared-host production path:
+# container names web/api/proxy collide, LISTEN_HTTP_PORT defaults to 80, and
+# env wiring is incomplete vs deployments/cli. Use deployments/fork-shared-host/
+# for plane.evotechly.com on 13.140.219.161.
 services:
   web:
     container_name: web

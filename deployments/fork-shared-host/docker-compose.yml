@@ -1,0 +1,319 @@
+# Production compose for THIS Plane fork (github.com/Mohamedbeghanem/plane-evo).
+# Builds local images from the checkout. Never references makeplane/*.
+#
+# Target host: Contabo 13.140.219.161 (plane.evotechly.com) only.
+# Never deploy to EvoCRM VPS 13.140.219.162.
+#
+# Sibling on the same host: postiz-evo at postiz.evotechly.com.
+# This file publishes a single loopback port so host nginx keeps 80/443.
+#
+# Requires Docker Compose v2. Use the wrapper:
+#   deployments/fork-shared-host/run.sh
+
+name: plane-evo
+
+x-db-env: &db-env
+  PGHOST: ${PGHOST:-plane-db}
+  PGDATABASE: ${PGDATABASE:-plane}
+  POSTGRES_USER: ${POSTGRES_USER:-plane}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plane}
+  POSTGRES_DB: ${POSTGRES_DB:-plane}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  PGDATA: ${PGDATA:-/var/lib/postgresql/data}
+
+x-redis-env: &redis-env
+  REDIS_HOST: ${REDIS_HOST:-plane-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_URL: ${REDIS_URL:-redis://plane-redis:6379/}
+  REDIS_SSL_CERT_REQS: ${REDIS_SSL_CERT_REQS:-required}
+  REDIS_SSL_CA_CERTS: ${REDIS_SSL_CA_CERTS:-}
+
+x-minio-env: &minio-env
+  MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID in plane.env}
+  MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY in plane.env}
+
+x-aws-s3-env: &aws-s3-env
+  AWS_REGION: ${AWS_REGION:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID in plane.env}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY in plane.env}
+  AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}
+  AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-uploads}
+
+x-proxy-env: &proxy-env
+  APP_DOMAIN: ${APP_DOMAIN:-plane.evotechly.com}
+  FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-5242880}
+  CERT_EMAIL: ${CERT_EMAIL:-}
+  CERT_ACME_CA: ${CERT_ACME_CA:-}
+  CERT_ACME_DNS: ${CERT_ACME_DNS:-}
+  LISTEN_HTTP_PORT: ${LISTEN_HTTP_PORT:-18080}
+  LISTEN_HTTPS_PORT: ${LISTEN_HTTPS_PORT:-}
+  BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-uploads}
+  SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private_ranges}
+
+x-mq-env: &mq-env
+  RABBITMQ_HOST: ${RABBITMQ_HOST:-plane-mq}
+  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-plane}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-plane}
+  RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-plane}
+  RABBITMQ_VHOST: ${RABBITMQ_VHOST:-plane}
+
+x-live-env: &live-env
+  API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:?set LIVE_SERVER_SECRET_KEY in plane.env}
+  LIVE_BASE_PATH: ${LIVE_BASE_PATH:-/live}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://plane.evotechly.com}
+
+x-app-env: &app-env
+  WEB_URL: ${WEB_URL:-https://plane.evotechly.com}
+  DEBUG: ${DEBUG:-0}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://plane.evotechly.com}
+  GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1}
+  USE_MINIO: ${USE_MINIO:-1}
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in plane.env}
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in plane.env}
+  AMQP_URL: ${AMQP_URL:?set AMQP_URL in plane.env}
+  API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-60/minute}
+  NUM_PROXIES: ${NUM_PROXIES:-2}
+  MINIO_ENDPOINT_SSL: ${MINIO_ENDPOINT_SSL:-0}
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:?set LIVE_SERVER_SECRET_KEY in plane.env}
+  WEBHOOK_ALLOWED_IPS: ${WEBHOOK_ALLOWED_IPS:-}
+  WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-}
+
+x-build-labels: &build-labels
+  plane.evo.repo: "github.com/Mohamedbeghanem/plane-evo"
+  plane.evo.product_sha: "053b2c0e5874fb3225404a8775d04f38f9e1704c"
+
+services:
+  web:
+    image: plane-evo/plane-frontend:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile.web
+    container_name: plane-evo-web
+    restart: unless-stopped
+    mem_limit: 128m
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - worker
+
+  space:
+    image: plane-evo/plane-space:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: apps/space/Dockerfile.space
+    container_name: plane-evo-space
+    restart: unless-stopped
+    mem_limit: 128m
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - worker
+      - web
+
+  admin:
+    image: plane-evo/plane-admin:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: apps/admin/Dockerfile.admin
+    container_name: plane-evo-admin
+    restart: unless-stopped
+    mem_limit: 128m
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - web
+
+  live:
+    image: plane-evo/plane-live:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: apps/live/Dockerfile.live
+    container_name: plane-evo-live
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      <<: [*live-env, *redis-env]
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - web
+
+  api:
+    image: plane-evo/plane-backend:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.api
+    container_name: plane-evo-api
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ./bin/docker-entrypoint-api.sh
+    volumes:
+      - logs_api:/code/plane/logs
+    environment:
+      <<: [*app-env, *db-env, *redis-env, *minio-env, *aws-s3-env, *proxy-env]
+    labels:
+      <<: *build-labels
+    depends_on:
+      - plane-db
+      - plane-redis
+      - plane-mq
+
+  worker:
+    image: plane-evo/plane-backend:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.api
+    container_name: plane-evo-worker
+    restart: unless-stopped
+    mem_limit: 512m
+    command: ./bin/docker-entrypoint-worker.sh
+    volumes:
+      - logs_worker:/code/plane/logs
+    environment:
+      <<: [*app-env, *db-env, *redis-env, *minio-env, *aws-s3-env, *proxy-env]
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - plane-db
+      - plane-redis
+      - plane-mq
+
+  beat-worker:
+    image: plane-evo/plane-backend:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.api
+    container_name: plane-evo-beat-worker
+    restart: unless-stopped
+    mem_limit: 256m
+    command: ./bin/docker-entrypoint-beat.sh
+    volumes:
+      - logs_beat-worker:/code/plane/logs
+    environment:
+      <<: [*app-env, *db-env, *redis-env, *minio-env, *aws-s3-env, *proxy-env]
+    labels:
+      <<: *build-labels
+    depends_on:
+      - api
+      - plane-db
+      - plane-redis
+      - plane-mq
+
+  migrator:
+    image: plane-evo/plane-backend:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.api
+    container_name: plane-evo-migrator
+    restart: "no"
+    mem_limit: 512m
+    command: ./bin/docker-entrypoint-migrator.sh
+    volumes:
+      - logs_migrator:/code/plane/logs
+    environment:
+      <<: [*app-env, *db-env, *redis-env, *minio-env, *aws-s3-env, *proxy-env]
+    labels:
+      <<: *build-labels
+    depends_on:
+      - plane-db
+      - plane-redis
+
+  plane-db:
+    image: postgres:15.7-alpine
+    container_name: plane-evo-db
+    restart: unless-stopped
+    mem_limit: 512m
+    command: postgres -c max_connections=100 -c shared_buffers=128MB
+    environment:
+      <<: *db-env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published. Sibling Postiz may already own 5432 if it published it.
+
+  plane-redis:
+    image: valkey/valkey:7.2.11-alpine
+    container_name: plane-evo-redis
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - redisdata:/data
+
+  plane-mq:
+    image: rabbitmq:3.13.6-management-alpine
+    container_name: plane-evo-mq
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      <<: *mq-env
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  plane-minio:
+    image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    container_name: plane-evo-minio
+    restart: unless-stopped
+    mem_limit: 256m
+    command: server /export --console-address ":9090"
+    environment:
+      <<: *minio-env
+    volumes:
+      - uploads:/export
+
+  proxy:
+    image: plane-evo/plane-proxy:${PLANE_IMAGE_TAG:?set PLANE_IMAGE_TAG}
+    pull_policy: never
+    build:
+      context: ../../apps/proxy
+      dockerfile: Dockerfile.ce
+    container_name: plane-evo-proxy
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      <<: *proxy-env
+    ports:
+      # Loopback only. Host nginx on 13.140.219.161 terminates TLS for
+      # plane.evotechly.com and must keep public 80/443 for postiz.evotechly.com.
+      - "127.0.0.1:18080:80"
+    volumes:
+      - proxy_config:/config
+      - proxy_data:/data
+    labels:
+      <<: *build-labels
+    depends_on:
+      - web
+      - api
+      - space
+      - admin
+      - live
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  logs_api:
+  logs_worker:
+  logs_beat-worker:
+  logs_migrator:
+  rabbitmq_data:
+  proxy_config:
+  proxy_data:
+
+networks:
+  default:
+    name: plane-evo
