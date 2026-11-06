@@ -1,3 +1,8 @@
+# FORK WARNING (plane-evo): every `image: makeplane/*` line below deploys stock
+# upstream Plane, not this repository. Do not use this file alone, and do not
+# run deployments/cli/community/install.sh (it clones makeplane/plane and pulls
+# makeplane images). Shared-host / this-fork production path:
+#   deployments/fork-shared-host/
 x-db-env: &db-env
   PGHOST: ${PGHOST:-plane-db}
   PGDATABASE: ${PGDATABASE:-plane}
