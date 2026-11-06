@@ -60,7 +60,9 @@ export PLANE_IMAGE_TAG="$(git rev-parse --short=12 HEAD)"
 docker compose -p plane-evo \
   -f deployments/fork-shared-host/docker-compose.yml \
   --env-file deployments/fork-shared-host/plane.env \
-  build --pull never
+  build
+# Compose v5: `build --pull` is a boolean. Do not pass `never` (it is parsed as a
+# service name). Images already have pull_policy: never.
 docker compose -p plane-evo \
   -f deployments/fork-shared-host/docker-compose.yml \
   --env-file deployments/fork-shared-host/plane.env \

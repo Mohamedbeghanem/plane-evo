@@ -20,7 +20,7 @@ usage() {
   cat <<'EOF'
 Usage: run.sh <build|config|up|migrate-wait|health|backup|down|logs> [args]
 
-  build         Sequential image build from this checkout (pull never)
+  build         Sequential image build from this checkout (images pull_policy: never)
   config        Render compose and run collision/stock-image guards
   up            Start stack (pull never, no implicit image fetch)
   migrate-wait  Block until migrator exits 0
@@ -123,7 +123,10 @@ cmd_build() {
   local svc
   for svc in api proxy live web space admin; do
     echo "=== building $svc (tag $PLANE_IMAGE_TAG) ==="
-    compose build --pull never "$svc"
+    # Compose v5 `build --pull` is a boolean (always pull bases). Do not pass
+    # `never` here — that is parsed as a service name. Service images are
+    # already pull_policy: never in docker-compose.yml.
+    compose build "$svc"
   done
   echo "Build complete. Images:"
   docker images "plane-evo/*:${PLANE_IMAGE_TAG}"
